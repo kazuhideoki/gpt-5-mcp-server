@@ -302,7 +302,7 @@ server.registerTool(
           .map((m) => m.id) ?? [];
       return {
         content: [
-          { type: "text", text: ids.join("\n") || "(見つかりませんでした)" },
+          { type: "text", text: ids.join(", ") || "(見つかりませんでした)" },
         ],
       };
     } catch (err) {
