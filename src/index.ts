@@ -1,5 +1,5 @@
-// gpt5-mcp-server.mjs
-// Node >= 18 推奨。ESM (mjs) でそのまま動きます。
+// gpt5-mcp-server.ts
+// Node >= 18 推奨。TypeScript (ESM) で動作します。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 /** .env があれば .env の OPENAI_API_KEY を優先し、無ければ環境変数を使う */
 // 先頭の import 群に追加
 
-function loadOpenAIKey() {
+function loadOpenAIKey(): { key: string | null; source: string } {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
     path.resolve(process.cwd(), ".env"),
@@ -23,7 +23,7 @@ function loadOpenAIKey() {
 
   // 既に環境変数があればそれを初期値に
   let key = process.env.OPENAI_API_KEY;
-  let source = key ? "env" : null;
+  let source: string = key ? "env" : "";
 
   for (const p of candidates) {
     if (fs.existsSync(p)) {
@@ -45,7 +45,7 @@ function loadOpenAIKey() {
 }
 
 const { key: OPENAI_API_KEY, source: keySource } = loadOpenAIKey();
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY ?? undefined });
 
 // ===== MCP Server =====
 const server = new McpServer({
@@ -56,7 +56,7 @@ const server = new McpServer({
 // ---- 入力スキーマ ----
 // できる限り GPT-5/Responses API の項目をカバーしつつ、未知の拡張は extra で受け取ってそのままパススルー。
 // registerTool への引数は ZodRawShape（素のオブジェクト）を渡す必要があるため、shape を分離
-const requestArgs = {
+const requestArgs: Record<string, z.ZodTypeAny> = {
     // 基本
     model: z
       .string()
@@ -186,10 +186,10 @@ const requestArgs = {
     extra: z.object({}).passthrough().optional(),
 };
 // 既存の正規化処理（normalizeRequest）用に Zod オブジェクトを併存
-const requestSchema = z.object(requestArgs).passthrough();
+  const requestSchema = z.object(requestArgs).passthrough();
 
-function normalizeRequest(args) {
-  const parsed = requestSchema.parse(args);
+  function normalizeRequest(args: unknown): Record<string, unknown> {
+    const parsed = requestSchema.parse(args);
 
   const {
     model,
@@ -203,7 +203,7 @@ function normalizeRequest(args) {
     ...rest
   } = parsed;
 
-  const body = { model: model ?? "gpt-5", ...rest };
+    const body: Record<string, unknown> = { model: model ?? "gpt-5", ...rest };
 
   // 入力の統一
   if (input !== undefined) {
@@ -226,13 +226,13 @@ function normalizeRequest(args) {
   }
 
   // 明示的にストリーミング無効化（MCP ツール結果は一括返却）
-  if (stream) body.stream = false;
+    if (stream) body.stream = false;
 
   // 任意拡張のパススルー
-  if (extra && typeof extra === "object") Object.assign(body, extra);
+    if (extra && typeof extra === "object") Object.assign(body, extra);
 
-  return body;
-}
+    return body;
+  }
 
 // ---- GPT-5 呼び出しツール（Responses API パススルー）----
 server.registerTool(
@@ -244,20 +244,20 @@ server.registerTool(
       "verbosity / reasoning(effort) / response_format / tools 等にも対応。",
     inputSchema: requestArgs,
   },
-  async (args) => {
+  async (args: unknown) => {
     try {
       const body = normalizeRequest(args);
-      const resp = await openai.responses.create(body); // Responses API
+      const resp: any = await openai.responses.create(body as any); // Responses API
       // 可能ならテキストを取り出す。無ければ JSON を文字列化。
       let text = "";
       if (typeof resp.output_text === "string") {
         text = resp.output_text;
       } else if (resp?.output && Array.isArray(resp.output)) {
         text = resp.output
-          .map((o) =>
+          .map((o: any) =>
             Array.isArray(o.content)
               ? o.content
-                  .map((c) =>
+                  .map((c: any) =>
                     "text" in c && typeof c.text === "string" ? c.text : "",
                   )
                   .filter(Boolean)
@@ -270,10 +270,10 @@ server.registerTool(
         text = JSON.stringify(resp, null, 2);
       }
       return { content: [{ type: "text", text }] };
-    } catch (err) {
+    } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "message" in err
-          ? err.message
+          ? (err as { message: string }).message
           : String(err);
       return {
         content: [{ type: "text", text: `Error: ${message}` }],
@@ -293,7 +293,7 @@ server.registerTool(
       prefix: z.string().default("gpt-5"),
     },
   },
-  async ({ prefix }) => {
+    async ({ prefix }: { prefix: string }) => {
     try {
       const list = await openai.models.list();
       const ids =
@@ -305,10 +305,10 @@ server.registerTool(
           { type: "text", text: ids.join(", ") || "(見つかりませんでした)" },
         ],
       };
-    } catch (err) {
+    } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "message" in err
-          ? err.message
+          ? (err as { message: string }).message
           : String(err);
       return {
         content: [{ type: "text", text: `Error: ${message}` }],
