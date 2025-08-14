@@ -2,3 +2,4 @@
 node_modules
 .mcp.json
 dist
+.serena/cache
