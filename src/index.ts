@@ -83,6 +83,28 @@ function normalizeRequest(args: unknown): Record<string, unknown> {
     ...restWithoutRF,
   };
 
+  // --- tools の文字列→オブジェクト正規化 + 表記ゆれ吸収 ---
+  const normalizeTool = (t: any) => {
+    if (typeof t === "string") {
+      const key = t.trim().toLowerCase();
+      if (key === "web_search" || key === "web_search_preview") return { type: "web_search_preview" };
+      if (key === "file_search") return { type: "file_search" };
+      return { type: key };
+    }
+    if (t && typeof t === "object" && t.type === "web_search") {
+      // ドキュメント表記ゆれ対策
+      return { ...t, type: "web_search_preview" };
+    }
+    return t;
+  };
+
+  if (Array.isArray((body as any).tools)) {
+    (body as any).tools = (body as any).tools.map(normalizeTool);
+  } else if ((body as any).tools == null) {
+    // デフォルトで Web 検索を 1 つ付ける
+    (body as any).tools = [{ type: "web_search_preview" }];
+  }
+
   // 入力の統一
   if (input !== undefined) {
     body.input = input;
@@ -111,6 +133,16 @@ function normalizeRequest(args: unknown): Record<string, unknown> {
 
   // 任意拡張のパススルー
   if (extra && typeof extra === "object") Object.assign(body, extra);
+
+  // ---- verbosity（上位互換）→ text.verbosity へ移行 ----
+  const moveVerbosityToText = () => {
+    const v = (body as any).verbosity;
+    if (!v) return;
+    delete (body as any).verbosity;
+    const text = (body as any).text && typeof (body as any).text === "object" ? (body as any).text : {};
+    (body as any).text = { ...text, verbosity: v };
+  };
+  moveVerbosityToText();
 
   // response_format -> text.format への移行対応
   // 代表的なケースのみサポート：json / json_object は text.format = "json" に変換
@@ -159,6 +191,18 @@ server.registerTool(
   async (args: unknown) => {
     try {
       const body = normalizeRequest(args);
+      // モデル×ツール非対応の簡易警告（-mini / -nano × web_search_preview）
+      try {
+        const modelId = String((body as any).model ?? "");
+        const tools = Array.isArray((body as any).tools) ? (body as any).tools : [];
+        const hasWebSearch = tools.some((t: any) => t && typeof t === "object" && t.type === "web_search_preview");
+        if (hasWebSearch && /-(mini|nano)\b/.test(modelId)) {
+          console.error(
+            `[gpt5-mcp] Warning: Model '${modelId}' may not support web_search_preview. Consider 'gpt-5' or 'gpt-5-chat-latest', or set tool_choice:"none".`,
+          );
+        }
+      } catch {}
+
       const resp: any = await openai.responses.create(body as any); // Responses API
       // 可能ならテキストを取り出す。無ければ JSON を文字列化。
       let text = "";
@@ -183,12 +227,32 @@ server.registerTool(
       }
       return { content: [{ type: "text", text }] };
     } catch (err: unknown) {
-      const message =
-        err && typeof err === "object" && "message" in err
-          ? (err as { message: string }).message
-          : String(err);
+      // 可能な限り詳細を返す
+      const anyErr = err as any;
+      const message = anyErr?.message ?? String(err);
+      const status = anyErr?.status ?? anyErr?.response?.status;
+      const code = anyErr?.code ?? anyErr?.response?.data?.error?.code;
+      const param = anyErr?.param ?? anyErr?.response?.data?.error?.param;
+      const details = anyErr?.response?.data
+        ? `\nDetails: ${JSON.stringify(anyErr.response.data, null, 2)}`
+        : "";
+      const composed = [
+        "Error:",
+        message,
+        status ? `(status ${status})` : "",
+        code ? `(code ${code})` : "",
+        param ? `(param ${param})` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      try {
+        console.error(
+          "[gpt5-mcp] request failed with body =",
+          JSON.stringify(normalizeRequest(args), null, 2),
+        );
+      } catch {}
       return {
-        content: [{ type: "text", text: `Error: ${message}` }],
+        content: [{ type: "text", text: `${composed}${details}` }],
         isError: true,
       };
     }

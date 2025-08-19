@@ -138,11 +138,12 @@ export const requestArgs: Record<string, z.ZodTypeAny> = {
     ),
 
   // ===== GPT-5 / Responses-specific extensions =====
+  // 互換エイリアス（Deprecated）: top-level で指定された場合でもサーバ側で text.verbosity に移行します
   verbosity: z
     .enum(["low", "medium", "high"])
     .optional()
     .describe(
-      "Output verbosity hint. Controls the level of detail in text responses. Forwarded as a top-level field.",
+      "DEPRECATED alias. The server will move this into `text.verbosity` for the Responses API.",
     ),
 
   reasoning: z
@@ -168,6 +169,12 @@ export const requestArgs: Record<string, z.ZodTypeAny> = {
   tools: z
     .array(
       z.union([
+        // 文字列シンタックスも許容（例: "web_search_preview" / "web_search" / "file_search"）
+        z
+          .enum(["web_search", "web_search_preview", "file_search"])
+          .describe(
+            "Shorthand form. The server will normalize to the proper tool object.",
+          ),
         // Custom function tool (JSON Schema parameters)
         z
           .object({
