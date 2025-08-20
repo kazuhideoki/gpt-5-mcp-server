@@ -134,6 +134,11 @@ function normalizeRequest(args: unknown): Record<string, unknown> {
   // 任意拡張のパススルー
   if (extra && typeof extra === "object") Object.assign(body, extra);
 
+  // サポート外パラメータの強制除去（OpenAI 側で 400 になるため）
+  if (Object.prototype.hasOwnProperty.call(body as any, "temperature")) {
+    delete (body as any).temperature;
+  }
+
   // ---- verbosity（上位互換）→ text.verbosity へ移行 ----
   const moveVerbosityToText = () => {
     const v = (body as any).verbosity;

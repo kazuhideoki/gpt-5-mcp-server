@@ -77,15 +77,6 @@ export const requestArgs: Record<string, z.ZodTypeAny> = {
     ),
 
   // ===== Sampling & length =====
-  temperature: z
-    .number()
-    .min(0)
-    .max(2)
-    .optional()
-    .describe(
-      "Sampling temperature. Higher values increase randomness; lower values make outputs more deterministic.",
-    ),
-
   top_p: z
     .number()
     .min(0)
