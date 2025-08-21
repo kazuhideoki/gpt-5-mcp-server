@@ -27,25 +27,44 @@ npm run start
 
 標準入出力（stdio）で MCP として待ち受けます。MCP クライアント側でコマンドとしてこのサーバーを起動する設定を行ってください。
 
-## 提供ツール
+## MCP クライアント連携例（.mcp.json）
 
-- `gpt5`: 最小ブリッジ（上記フィールドのみ）。`web_search` を既定オンで提供。
+以下は MCP クライアント（例: Claude Desktop など）で本サーバーを登録する `.mcp.json` の例です。`OPENAI_API_KEY` はご自身のキーに置き換えてください。既存の設定がある場合は `mcpServers` 配下に追記してください。
 
-入力例（概念図）:
-
-```
+```json
 {
-  "model": "gpt-5-mini",
-  "input": "次の文章を要約してください",
-  "reasoning_effort": "medium",
-  "web_search": true
+  "mcpServers": {
+    "gpt": {
+      "command": "bun",
+      "args": [
+        "/Users/username/gpt-5-mcp-server/src/index.ts"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "sk-xxxx"
+      }
+    }
+  }
 }
 ```
 
-出力は Responses API の `output_text` を優先してテキストとして返却します。
+### npx 版（ビルド不要・tsx 推奨）
 
-## 互換・注意事項
+ビルド不要で TypeScript/ESM を直接起動したい場合は `npx tsx` が高速・安定です。
 
-- `messages` や `tools`、`max_tokens` などは受け付けません（エラー）。
-- mini / nano 系モデルは `web_search_preview` に非対応の可能性があります（内部ログに注意喚起を出します）。
-- 参考スクリプト: `scripts/openai_api.sh`（シェルから Responses API を叩く簡易例）。
+```json
+{
+  "mcpServers": {
+    "gpt": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "tsx",
+        "/Users/username/gpt-5-mcp-server/src/index.ts"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "sk-xxxx"
+      }
+    }
+  }
+}
+```
