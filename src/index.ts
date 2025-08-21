@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as dotenv from "dotenv";
 import OpenAI from "openai";
-import { requestArgs, requestSchema, openaiModelsInputSchema } from "./schemas.js";
+import { requestArgs, requestSchema } from "./schemas.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { fileURLToPath } from "node:url";
@@ -58,127 +58,18 @@ const server = new McpServer({
 
 function normalizeRequest(args: unknown): Record<string, unknown> {
   const parsed = requestSchema.parse(args);
-
-  const {
-    model,
-    input,
-    messages,
-    prompt,
-    max_tokens,
-    reasoning_effort,
-    response_format, // Chat/Responses API 旧パラメータ（互換のため受け取り）
-    extra,
-    stream, // MCP ではストリーミングしない
-    ...rest
-  } = parsed;
-
-  // 旧 response_format は REST に展開せず（APIで400になるため）、必要に応じて text.format に変換する
-  const { response_format: _omitRF, ...restWithoutRF } = rest as Record<
-    string,
-    unknown
-  >;
+  const { model, input, reasoning_effort } = parsed as {
+    model: string;
+    input: string;
+    reasoning_effort?: "minimal" | "low" | "medium" | "high";
+  };
 
   const body: Record<string, unknown> = {
     model: model ?? "gpt-5",
-    ...restWithoutRF,
+    input,
+    tools: [{ type: "web_search_preview" }],
   };
-
-  // --- tools の文字列→オブジェクト正規化 + 表記ゆれ吸収 ---
-  const normalizeTool = (t: any) => {
-    if (typeof t === "string") {
-      const key = t.trim().toLowerCase();
-      if (key === "web_search" || key === "web_search_preview") return { type: "web_search_preview" };
-      if (key === "file_search") return { type: "file_search" };
-      return { type: key };
-    }
-    if (t && typeof t === "object" && t.type === "web_search") {
-      // ドキュメント表記ゆれ対策
-      return { ...t, type: "web_search_preview" };
-    }
-    return t;
-  };
-
-  if (Array.isArray((body as any).tools)) {
-    (body as any).tools = (body as any).tools.map(normalizeTool);
-  } else if ((body as any).tools == null) {
-    // デフォルトで Web 検索を 1 つ付ける
-    (body as any).tools = [{ type: "web_search_preview" }];
-  }
-
-  // 入力の統一
-  if (input !== undefined) {
-    body.input = input;
-  } else if (Array.isArray(messages) && messages.length > 0) {
-    // Responses API は message 配列も input として受け付けます（空配列は無視）
-    body.input = messages;
-  } else if (prompt !== undefined) {
-    body.input = prompt;
-  } else if (messages !== undefined && Array.isArray(messages) && messages.length === 0) {
-    // messages が空配列かつ prompt も無い場合はエラー
-    throw new Error("messages が空です。prompt か input を指定してください。");
-  } else {
-    throw new Error("input / messages / prompt のいずれかを指定してください。");
-  }
-
-  // 互換エイリアス
-  if (body.max_output_tokens == null && typeof max_tokens === "number") {
-    body.max_output_tokens = max_tokens;
-  }
-  if (!body.reasoning && reasoning_effort) {
-    body.reasoning = { effort: reasoning_effort };
-  }
-
-  // 明示的にストリーミング無効化（MCP ツール結果は一括返却）
-  if (stream) body.stream = false;
-
-  // 任意拡張のパススルー
-  if (extra && typeof extra === "object") Object.assign(body, extra);
-
-  // サポート外パラメータの強制除去（OpenAI 側で 400 になるため）
-  if (Object.prototype.hasOwnProperty.call(body as any, "temperature")) {
-    delete (body as any).temperature;
-  }
-
-  // ---- verbosity（上位互換）→ text.verbosity へ移行 ----
-  const moveVerbosityToText = () => {
-    const v = (body as any).verbosity;
-    if (!v) return;
-    delete (body as any).verbosity;
-    const text = (body as any).text && typeof (body as any).text === "object" ? (body as any).text : {};
-    (body as any).text = { ...text, verbosity: v };
-  };
-  moveVerbosityToText();
-
-  // response_format -> text.format への移行対応
-  // 代表的なケースのみサポート：json / json_object は text.format = "json" に変換
-  if (response_format !== undefined) {
-    try {
-      const rf: any = response_format;
-      const currentText =
-        (body as any).text && typeof (body as any).text === "object"
-          ? (body as any).text
-          : {};
-      const setTextFormat = (fmt: "json" | "plain") => {
-        (body as any).text = { ...currentText, format: fmt };
-      };
-
-      if (typeof rf === "string") {
-        if (rf === "json") setTextFormat("json");
-      } else if (rf && typeof rf === "object") {
-        const t = rf.type ?? rf.format; // 旧: { type: "json_object" } / 一部: { format: "json" }
-        if (t === "json" || t === "json_object") {
-          setTextFormat("json");
-        } else if (t === "json_schema") {
-          // 新APIでは text.format にスキーマ指定が存在しないため、互換として json を指定
-          // 参照用に元値は body.response_format_original に残す（サーバ側で無視されても安全）
-          setTextFormat("json");
-          (body as any).response_format_original = rf;
-        }
-      }
-    } catch {
-      // フォールバック：変換に失敗しても本体処理は継続
-    }
-  }
+  if (reasoning_effort) body.reasoning = { effort: reasoning_effort };
 
   return body;
 }
@@ -187,29 +78,26 @@ function normalizeRequest(args: unknown): Record<string, unknown> {
 server.registerTool(
   "gpt5",
   {
-    title: "OpenAI GPT-5 (Responses API)",
+    title: "OpenAI GPT-5 (最小MVP)",
     description:
-      "GPT-5 へのフルパラメータ・パススルー呼び出し。input/messages/prompt いずれかで入力を渡せます。" +
-      "verbosity / reasoning(effort) / response_format / tools 等にも対応。",
+      "モデルと推論強度のみを指定可能な最小ブリッジ。Web検索は常時オン（スキーマに含めません）。",
     inputSchema: requestArgs,
   },
   async (args: unknown) => {
     try {
       const body = normalizeRequest(args);
-      // モデル×ツール非対応の簡易警告（-mini / -nano × web_search_preview）
+
+      // 参考: mini/nano 系は web_search_preview に非対応の可能性がある
       try {
         const modelId = String((body as any).model ?? "");
-        const tools = Array.isArray((body as any).tools) ? (body as any).tools : [];
-        const hasWebSearch = tools.some((t: any) => t && typeof t === "object" && t.type === "web_search_preview");
-        if (hasWebSearch && /-(mini|nano)\b/.test(modelId)) {
+        if (/(?:^|-)mini\b|(?:^|-)nano\b/.test(modelId)) {
           console.error(
-            `[gpt5-mcp] Warning: Model '${modelId}' may not support web_search_preview. Consider 'gpt-5' or 'gpt-5-chat-latest', or set tool_choice:"none".`,
+            `[gpt5-mcp] 注意: モデル '${modelId}' は web_search_preview に非対応の可能性があります。`,
           );
         }
       } catch {}
 
-      const resp: any = await openai.responses.create(body as any); // Responses API
-      // 可能ならテキストを取り出す。無ければ JSON を文字列化。
+      const resp: any = await openai.responses.create(body as any);
       let text = "";
       if (typeof resp.output_text === "string") {
         text = resp.output_text;
@@ -232,7 +120,6 @@ server.registerTool(
       }
       return { content: [{ type: "text", text }] };
     } catch (err: unknown) {
-      // 可能な限り詳細を返す
       const anyErr = err as any;
       const message = anyErr?.message ?? String(err);
       const status = anyErr?.status ?? anyErr?.response?.status;
@@ -265,37 +152,7 @@ server.registerTool(
 );
 
 // ---- おまけ：利用可能な gpt-5* モデルを列挙するツール ----
-server.registerTool(
-  "openai_models",
-  {
-    title: "OpenAI models list (gpt-5*)",
-    description: "OpenAI の gpt-5 系モデル ID を列挙します。",
-    inputSchema: openaiModelsInputSchema,
-  },
-  async ({ prefix }: { prefix: string }) => {
-    try {
-      const list = await openai.models.list();
-      const ids =
-        list?.data
-          ?.filter((m) => typeof m.id === "string" && m.id.startsWith(prefix))
-          .map((m) => m.id) ?? [];
-      return {
-        content: [
-          { type: "text", text: ids.join(", ") || "(見つかりませんでした)" },
-        ],
-      };
-    } catch (err: unknown) {
-      const message =
-        err && typeof err === "object" && "message" in err
-          ? (err as { message: string }).message
-          : String(err);
-      return {
-        content: [{ type: "text", text: `Error: ${message}` }],
-        isError: true,
-      };
-    }
-  },
-);
+// 追加ツールは提供しない（MVP）
 
 // ---- 起動（stdio）----
 const transport = new StdioServerTransport();
