@@ -55,20 +55,17 @@
   }
   ```
 
-### 3) Web検索の使用制約を事前適用
+### 3) Web検索の使用制約（スキーマで統一）
 - 変更内容:
-  - `reasoning_effort === "minimal"` または `model ∈ {gpt-5-mini, gpt-5-nano}` の際は `tools` を付与しない。必要時はログで通知。
-- 理由: API側の拒否前に意図どおりの挙動とし、試行錯誤の無駄を削減。
+  - 併用不可（minimal × web_search）の制約はスキーマ（zod の `superRefine`）で一元管理。
+- 理由: バリデーションロジックの重複を避け、実装側は指定どおりに `web_search` を付与するだけに簡素化。
 - 影響範囲: `buildRequest`（公開I/F不変）。
 - 注意点: 出力メッセージ本文には混ぜず、サーバログのみ。
 - コード例:
   ```ts
   const DEFAULT_MODEL = "gpt-5";
   const SEARCH_TOOL = { type: "web_search_preview" } as const;
-  const DISALLOW_SEARCH_MODELS = new Set(["gpt-5-mini", "gpt-5-nano"]);
-  const modelEffortDisallows = reasoning_effort === "minimal" || DISALLOW_SEARCH_MODELS.has(model);
-  const useWeb = (web_search ?? true) && !modelEffortDisallows;
-  if (!useWeb && (web_search ?? true)) console.error("[gpt5-mcp] web_search disabled by model/effort constraint.");
+  const useWeb = web_search ?? true; // 併用不可はスキーマで弾く
   if (useWeb) body.tools = [SEARCH_TOOL];
   ```
 
@@ -187,4 +184,3 @@
 3. Web検索制約の事前適用とログ追加。
 4. キーガード/ロギング/起動・終了フロー強化。
 5. 純粋関数のユニットテスト整備。
-

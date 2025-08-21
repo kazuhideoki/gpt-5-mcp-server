@@ -77,14 +77,14 @@ function buildRequest(args: unknown): Record<string, unknown> {
 }
 
 // ---- GPT-5 呼び出しツール（Responses API パススルー）----
-server.registerTool(
-  "gpt5",
-  {
-    title: "OpenAI GPT-5 (最小MVP)",
-    description:
-      'モデル/推論強度/ウェブ検索フラグのみ指定可能な最小ブリッジ。web_search は既定でオン。reasoning_effort="minimal" のとき、または gpt-5-mini / gpt-5-nano のときは web_search を使えません。',
-    inputSchema: requestArgs,
-  },
+  server.registerTool(
+    "gpt5",
+    {
+      title: "OpenAI GPT-5 (最小MVP)",
+      description:
+      'モデル/推論強度/ウェブ検索フラグのみ指定可能な最小ブリッジ。web_search は既定でオン（制約は inputSchema を参照）。',
+      inputSchema: requestArgs,
+    },
   async (args: unknown) => {
     try {
       const body = buildRequest(args);

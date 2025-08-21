@@ -6,7 +6,8 @@ OpenAI Responses API への極薄い MCP サーバーです。指定できるの
 - input: 単一のテキスト入力（必須）
 - reasoning_effort: `minimal | low | medium | high`（任意）
 - web_search: `true | false`（任意、既定: `true`）
-  - 制約: `reasoning_effort` が `minimal` の場合は `web_search` は利用不可（`false` を指定）
+  - 備考: `web_search` を有効にすると Responses API の `web_search_preview` ツールが付与されます。
+  - 制約: `reasoning_effort` が `minimal` の場合は `web_search` は利用不可（`false` を指定、または effort を `low` 以上に）
 
 その他のパラメータは受け付けません（未知のキーはエラー）。
 
