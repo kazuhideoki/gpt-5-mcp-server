@@ -5,8 +5,10 @@ OpenAI Responses API への極薄い MCP サーバーです。指定できるの
 - model: 実行するモデルID（許可: `gpt-5` / `gpt-5-mini` / `gpt-5-nano`。既定: `gpt-5`）
 - input: 単一のテキスト入力（必須）
 - reasoning_effort: `minimal | low | medium | high`（任意）
+- web_search: `true | false`（任意、既定: `true`）
+  - 制約: `reasoning_effort` が `minimal` の場合は `web_search` は利用不可（`false` を指定）
 
-Web検索（`web_search_preview`）は既定で常時オンです。スキーマには含めません。その他のパラメータは受け付けません（未知のキーはエラー）。
+その他のパラメータは受け付けません（未知のキーはエラー）。
 
 ## セットアップ
 
@@ -27,7 +29,7 @@ npm run start
 
 ## 提供ツール
 
-- `gpt5`: 最小ブリッジ（上記3項目のみ）。Web検索は常時オン。
+- `gpt5`: 最小ブリッジ（上記フィールドのみ）。`web_search` を既定オンで提供。
 
 入力例（概念図）:
 
@@ -35,7 +37,8 @@ npm run start
 {
   "model": "gpt-5-mini",
   "input": "次の文章を要約してください",
-  "reasoning_effort": "medium"
+  "reasoning_effort": "medium",
+  "web_search": true
 }
 ```
 

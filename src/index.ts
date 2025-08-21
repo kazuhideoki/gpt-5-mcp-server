@@ -56,19 +56,21 @@ const server = new McpServer({
 // ---- 入力スキーマ ----
 // スキーマは src/schemas.ts に分離
 
-function normalizeRequest(args: unknown): Record<string, unknown> {
+function buildRequest(args: unknown): Record<string, unknown> {
   const parsed = requestSchema.parse(args);
-  const { model, input, reasoning_effort } = parsed as {
+  const { model, input, reasoning_effort, web_search } = parsed as {
     model: string;
     input: string;
     reasoning_effort?: "minimal" | "low" | "medium" | "high";
+    web_search?: boolean;
   };
 
   const body: Record<string, unknown> = {
     model: model ?? "gpt-5",
     input,
-    tools: [{ type: "web_search_preview" }],
   };
+  const useWeb = web_search ?? true;
+  if (useWeb) body.tools = [{ type: "web_search_preview" }];
   if (reasoning_effort) body.reasoning = { effort: reasoning_effort };
 
   return body;
@@ -80,17 +82,22 @@ server.registerTool(
   {
     title: "OpenAI GPT-5 (最小MVP)",
     description:
-      "モデルと推論強度のみを指定可能な最小ブリッジ。Web検索は常時オン（スキーマに含めません）。",
+      'モデル/推論強度/ウェブ検索フラグのみ指定可能な最小ブリッジ。web_search は既定でオン。reasoning_effort="minimal" のときは web_search を使えません。',
     inputSchema: requestArgs,
   },
   async (args: unknown) => {
     try {
-      const body = normalizeRequest(args);
+      const body = buildRequest(args);
 
       // 参考: mini/nano 系は web_search_preview に非対応の可能性がある
       try {
         const modelId = String((body as any).model ?? "");
-        if (/(?:^|-)mini\b|(?:^|-)nano\b/.test(modelId)) {
+        const hasWeb =
+          Array.isArray((body as any).tools) &&
+          (body as any).tools.some(
+            (t: any) => t?.type === "web_search_preview",
+          );
+        if (hasWeb && /(?:^|-)mini\b|(?:^|-)nano\b/.test(modelId)) {
           console.error(
             `[gpt5-mcp] 注意: モデル '${modelId}' は web_search_preview に非対応の可能性があります。`,
           );
@@ -140,7 +147,7 @@ server.registerTool(
       try {
         console.error(
           "[gpt5-mcp] request failed with body =",
-          JSON.stringify(normalizeRequest(args), null, 2),
+          JSON.stringify(buildRequest(args), null, 2),
         );
       } catch {}
       return {

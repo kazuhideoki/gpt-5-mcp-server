@@ -24,7 +24,32 @@ export const requestArgs = {
     .optional()
     .describe("推論強度（reasoning.effort）を指定します。")
     .default("medium"),
+
+  web_search: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      [
+        "Web検索の有効/無効を切り替えます（既定: 有効）。",
+        "制約: reasoning_effort が \"minimal\" の場合は利用できません（false を指定してください）。",
+      ].join("\n"),
+    ),
 } as const;
 
-// 不明なキーはエラーにするため strict
-export const requestSchema = z.object(requestArgs).strict();
+// 不明なキーはエラーにするため strict。minimal×web_search=true を zod で弾く
+export const requestSchema = z
+  .object(requestArgs)
+  .strict()
+  .superRefine((val, ctx) => {
+    const effort = val.reasoning_effort;
+    const ws = val.web_search ?? true;
+    if (effort === "minimal" && ws) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["web_search"],
+        message:
+          'reasoning_effort が "minimal" の場合、web_search は利用できません（false に設定してください）',
+      });
+    }
+  });
