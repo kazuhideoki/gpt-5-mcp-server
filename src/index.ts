@@ -82,29 +82,14 @@ server.registerTool(
   {
     title: "OpenAI GPT-5 (最小MVP)",
     description:
-      'モデル/推論強度/ウェブ検索フラグのみ指定可能な最小ブリッジ。web_search は既定でオン。reasoning_effort="minimal" のときは web_search を使えません。',
+      'モデル/推論強度/ウェブ検索フラグのみ指定可能な最小ブリッジ。web_search は既定でオン。reasoning_effort="minimal" のとき、または gpt-5-mini / gpt-5-nano のときは web_search を使えません。',
     inputSchema: requestArgs,
   },
   async (args: unknown) => {
     try {
       const body = buildRequest(args);
 
-      // 参考: mini/nano 系は web_search_preview に非対応の可能性がある
-      try {
-        const modelId = String((body as any).model ?? "");
-        const hasWeb =
-          Array.isArray((body as any).tools) &&
-          (body as any).tools.some(
-            (t: any) => t?.type === "web_search_preview",
-          );
-        if (hasWeb && /(?:^|-)mini\b|(?:^|-)nano\b/.test(modelId)) {
-          console.error(
-            `[gpt5-mcp] 注意: モデル '${modelId}' は web_search_preview に非対応の可能性があります。`,
-          );
-        }
-      } catch {}
-
-      const resp: any = await openai.responses.create(body as any);
+      const resp: any = await openai.responses.create(body);
       let text = "";
       if (typeof resp.output_text === "string") {
         text = resp.output_text;

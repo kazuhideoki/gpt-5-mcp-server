@@ -32,9 +32,9 @@ export const requestArgs = {
         "",
         "使い分け:",
         "- minimal: 速度/コスト最優先。抽出・単純分類・短文の定型生成など“考えずに処理”できるタスク向け。※本スキーマでは web_search と併用不可。",
-        "- low: 軽い段取りが必要な要約・言い換え・フォーム埋めの下書きなど。",
-        "- medium: 既定。数段階の推論が要る一般的な分析/コード改変/要件整理に。",
-        "- high: 複雑な要件統合・長い思考過程が必要な設計検討/リサーチ統合/厳密なコード変換など。遅延とコストは最大。",
+        "- low: 軽い段取りが必要な要約・言い換え・フォーム埋めの下書き、簡単な調べ物など",
+        "- medium: 既定。数段階の推論が要る一般的な分析/コード改変/要件整理に。複数ソースにあたるべき調べ物など",
+        "- high: 複雑な要件統合・長い思考過程が必要な設計検討/リサーチ統合/厳密なコード変換など。最大限に情報収集するときなど。",
         "",
         "指標: 納期がタイト/バッチ大量=下げる、正答性・一貫性が最重要=上げる。",
       ].join("\n"),
@@ -59,6 +59,7 @@ export const requestArgs = {
         "",
         "制約（本スキーマの運用ルール）:",
         '- reasoning_effort が "minimal" の場合は使用不可（false を指定）。',
+        "- モデルが gpt-5-mini / gpt-5-nano の場合は使用不可（false を指定）。",
         "",
         "ヒント: 調査→要約の2段構えにする場合、まず web_search=true で情報収集、次に結果を input に貼り再度 web_search=false で整形すると高速・安定。",
       ].join("\n"),
@@ -72,12 +73,22 @@ export const requestSchema = z
   .superRefine((val, ctx) => {
     const effort = val.reasoning_effort;
     const ws = val.web_search ?? true;
+    const model = val.model;
     if (effort === "minimal" && ws) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["web_search"],
         message:
           'reasoning_effort が "minimal" の場合、web_search は利用できません（false に設定してください）',
+      });
+    }
+    // gpt-5-mini / gpt-5-nano は web_search_preview 非対応のため禁止
+    if ((model === "gpt-5-mini" || model === "gpt-5-nano") && ws) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["web_search"],
+        message:
+          "モデル 'gpt-5-mini' および 'gpt-5-nano' は web_search_preview に非対応です（web_search を false に設定してください）",
       });
     }
   });
